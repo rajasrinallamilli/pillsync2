@@ -5,7 +5,7 @@
 [tool.black]
 line-length = 100
 target-version = ["py311"]
-extend-exclude = "/(migrations|\.venv|node_modules)/"
+extend-exclude = '/(migrations|\.venv|node_modules)/'
 
 [tool.isort]
 profile = "black"
@@ -35,6 +35,18 @@ python_files = ["test_*.py", "*_test.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-ra --strict-markers"
+# Explicitly puts backend/ (this file's directory) on sys.path before test
+# collection. Without this, pytest's package-discovery walk can insert
+# backend/tests/ instead of backend/ if any tests/**/__init__.py isn't
+# committed to git — which breaks `from apps... import ...` in conftest.py
+# with "ModuleNotFoundError: No module named 'apps'" in CI even when it
+# works locally. This makes that failure mode impossible regardless of
+# __init__.py presence.
+pythonpath = ["."]
+# This branch uses the FastAPI alternative, so tests are async by default —
+# no need to sprinkle @pytest.mark.asyncio on every test function.
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "unit: fast tests with no external dependencies",
     "integration: tests that touch the database or the API layer",
