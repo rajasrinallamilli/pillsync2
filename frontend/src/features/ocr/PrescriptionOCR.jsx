@@ -14,6 +14,12 @@ export default function PrescriptionOCR() {
   const [rawText, setRawText] = useState('');
   const [showRaw, setShowRaw] = useState(false);
   const [confidence, setConfidence] = useState({ level: 'Medium', score: 0 });
+  const [metadata, setMetadata] = useState({
+    prescriber_name: '',
+    prescription_date: '',
+    patient_name: '',
+    refills_authorized: '',
+  });
   const [medicines, setMedicines] = useState([]);
   const [saveLoading, setSaveLoading] = useState(false);
   const fileInputRef = useRef(null);
@@ -65,6 +71,12 @@ export default function PrescriptionOCR() {
         level: data.confidence_level || 'Medium',
         score: data.mean_confidence || 0,
       });
+      setMetadata({
+        prescriber_name: data.prescriber_name || '',
+        prescription_date: data.prescription_date || '',
+        patient_name: data.patient_name || '',
+        refills_authorized: data.refills_authorized || '',
+      });
       setMedicines(data.medicines || []);
       setSuccess(data.message || 'Prescription extracted successfully!');
     } catch (err) {
@@ -77,6 +89,9 @@ export default function PrescriptionOCR() {
   const handleMedicineChange = (index, field, value) => {
     const updated = [...medicines];
     updated[index][field] = value;
+    // Keep backward-compatibility fields in sync
+    if (field === 'strength') updated[index]['dosage'] = value;
+    if (field === 'instructions') updated[index]['prescription_details'] = value;
     setMedicines(updated);
   };
 
@@ -85,10 +100,13 @@ export default function PrescriptionOCR() {
       ...medicines,
       {
         medicine_name: '',
+        strength: '',
         dosage: '',
+        dose_per_administration: '',
         quantity: '',
         frequency: '',
         duration: '',
+        instructions: '',
         prescription_details: '',
         confidence: 'High',
       },
@@ -128,13 +146,13 @@ export default function PrescriptionOCR() {
   };
 
   return (
-    <div className="max-w-5xl mx-auto p-6 space-y-6 font-sans">
+    <div className="max-w-6xl mx-auto p-6 space-y-6 font-sans">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Prescription OCR</h1>
           <p className="text-sm text-slate-500">
-            Scan and extract medicine name, dosage, quantity, frequency, and instructions.
+            Scan and extract medicine name, dosage strength, prescribed dose, quantity, frequency, and instructions.
           </p>
         </div>
         <span className="px-3 py-1 bg-green-100 text-green-800 text-xs font-semibold rounded-full border border-green-200">
@@ -146,9 +164,9 @@ export default function PrescriptionOCR() {
       <div className="p-4 bg-amber-50 border-l-4 border-amber-500 rounded-md text-amber-900 text-sm flex gap-3">
         <span className="text-xl">⚠️</span>
         <div>
-          <strong>Medical Safety Notice:</strong> PillSync OCR extracts text from prescription images.
+          <strong>Medical Safety Notice:</strong> PillSync OCR assists in extracting text from prescription images.
           It does not diagnose, prescribe, or change treatments. Always verify all extracted details
-          manually against your doctor's original prescription.
+          manually against your doctor's original prescription before saving.
         </div>
       </div>
 
@@ -242,6 +260,28 @@ export default function PrescriptionOCR() {
             </button>
           </div>
 
+          {/* Prescription Metadata Summary */}
+          {(metadata.prescriber_name || metadata.prescription_date) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-lg text-xs">
+              <div>
+                <span className="text-slate-400 block font-medium">PRESCRIBER</span>
+                <strong className="text-slate-800">{metadata.prescriber_name || 'Not detected'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">DATE</span>
+                <strong className="text-slate-800">{metadata.prescription_date || 'Not detected'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">PATIENT</span>
+                <strong className="text-slate-800">{metadata.patient_name || 'Not detected'}</strong>
+              </div>
+              <div>
+                <span className="text-slate-400 block font-medium">REFILLS</span>
+                <strong className="text-slate-800">{metadata.refills_authorized || 'Not detected'}</strong>
+              </div>
+            </div>
+          )}
+
           {/* Raw Text Drawer */}
           {showRaw && (
             <div className="p-3 bg-slate-900 text-slate-200 rounded-lg text-xs font-mono max-h-48 overflow-y-auto whitespace-pre-wrap">
@@ -260,83 +300,108 @@ export default function PrescriptionOCR() {
             <table className="w-full text-sm text-left border-collapse">
               <thead>
                 <tr className="bg-slate-100 text-slate-700 text-xs uppercase border-b border-slate-200">
-                  <th className="p-3">Medicine</th>
-                  <th className="p-3">Dosage</th>
-                  <th className="p-3">Quantity</th>
-                  <th className="p-3">Frequency</th>
-                  <th className="p-3">Duration</th>
-                  <th className="p-3">Instructions</th>
-                  <th className="p-3 text-center">Action</th>
+                  <th className="p-2.5">Medicine</th>
+                  <th className="p-2.5">Strength</th>
+                  <th className="p-2.5">Dose</th>
+                  <th className="p-2.5">Quantity</th>
+                  <th className="p-2.5">Frequency</th>
+                  <th className="p-2.5">Duration</th>
+                  <th className="p-2.5">Instructions</th>
+                  <th className="p-2.5 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
-                {medicines.map((med, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.medicine_name || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'medicine_name', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="Medicine name"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.dosage || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'dosage', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="e.g. 500 mg"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.quantity || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'quantity', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="e.g. 10 tablets"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.frequency || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'frequency', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="e.g. Twice daily"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.duration || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'duration', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="e.g. 5 days"
-                      />
-                    </td>
-                    <td className="p-2">
-                      <input
-                        type="text"
-                        value={med.prescription_details || ''}
-                        onChange={(e) => handleMedicineChange(idx, 'prescription_details', e.target.value)}
-                        className="w-full p-1.5 border border-slate-300 rounded text-sm"
-                        placeholder="e.g. After food"
-                      />
-                    </td>
-                    <td className="p-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveMedicine(idx)}
-                        className="text-red-500 hover:text-red-700 px-2 py-1 text-xs"
-                      >
-                        ✕
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {medicines.map((med, idx) => {
+                  const strengthVal = med.strength || med.dosage || '';
+                  const doseVal = med.dose_per_administration || '';
+                  const qtyVal = med.quantity || '';
+                  const freqVal = med.frequency || '';
+                  const durVal = med.duration || '';
+                  const instVal = med.instructions || med.prescription_details || '';
+
+                  return (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-2 min-w-[140px]">
+                        <input
+                          type="text"
+                          value={med.medicine_name || ''}
+                          onChange={(e) => handleMedicineChange(idx, 'medicine_name', e.target.value)}
+                          className="w-full p-1.5 border border-slate-300 rounded text-sm font-medium"
+                          placeholder="Medicine name"
+                        />
+                        {med.brand_name && (
+                          <span className="text-[10px] text-sky-700 bg-sky-50 border border-sky-200 px-1.5 py-0.5 rounded mt-1 inline-block">
+                            Brand: {med.brand_name}
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-2 min-w-[90px]">
+                        <input
+                          type="text"
+                          value={strengthVal}
+                          onChange={(e) => handleMedicineChange(idx, 'strength', e.target.value)}
+                          className={`w-full p-1.5 border rounded text-sm ${!strengthVal ? 'border-amber-300 bg-amber-50/50' : 'border-slate-300'}`}
+                          placeholder="e.g. 500 mg"
+                        />
+                      </td>
+                      <td className="p-2 min-w-[90px]">
+                        <input
+                          type="text"
+                          value={doseVal}
+                          onChange={(e) => handleMedicineChange(idx, 'dose_per_administration', e.target.value)}
+                          className={`w-full p-1.5 border rounded text-sm ${!doseVal ? 'border-amber-300 bg-amber-50/50' : 'border-slate-300'}`}
+                          placeholder="e.g. 1 tablet"
+                        />
+                      </td>
+                      <td className="p-2 min-w-[90px]">
+                        <input
+                          type="text"
+                          value={qtyVal}
+                          onChange={(e) => handleMedicineChange(idx, 'quantity', e.target.value)}
+                          className={`w-full p-1.5 border rounded text-sm ${!qtyVal ? 'border-amber-300 bg-amber-50/50' : 'border-slate-300'}`}
+                          placeholder="e.g. 10 tablets"
+                        />
+                      </td>
+                      <td className="p-2 min-w-[110px]">
+                        <input
+                          type="text"
+                          value={freqVal}
+                          onChange={(e) => handleMedicineChange(idx, 'frequency', e.target.value)}
+                          className={`w-full p-1.5 border rounded text-sm ${!freqVal ? 'border-amber-300 bg-amber-50/50' : 'border-slate-300'}`}
+                          placeholder="e.g. Twice daily"
+                        />
+                      </td>
+                      <td className="p-2 min-w-[80px]">
+                        <input
+                          type="text"
+                          value={durVal}
+                          onChange={(e) => handleMedicineChange(idx, 'duration', e.target.value)}
+                          className={`w-full p-1.5 border rounded text-sm ${!durVal ? 'border-amber-300 bg-amber-50/50' : 'border-slate-300'}`}
+                          placeholder="e.g. 5 days"
+                        />
+                      </td>
+                      <td className="p-2 min-w-[120px]">
+                        <input
+                          type="text"
+                          value={instVal}
+                          onChange={(e) => handleMedicineChange(idx, 'instructions', e.target.value)}
+                          className="w-full p-1.5 border border-slate-300 rounded text-sm"
+                          placeholder="e.g. After food"
+                        />
+                      </td>
+                      <td className="p-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveMedicine(idx)}
+                          className="text-red-500 hover:text-red-700 px-2 py-1 text-xs"
+                          title="Remove item"
+                        >
+                          ✕
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

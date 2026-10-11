@@ -4,6 +4,7 @@ Handles dynamic executable resolution, dual-pass recognition,
 confidence estimation, and structured raw text extraction.
 """
 
+import re
 import os
 import shutil
 import logging
@@ -144,29 +145,61 @@ class OCREngine:
                 if (words2 > words1 and conf2 >= 35.0) or (conf2 > conf1 + 15):
                     best_result = result2
 
+        # Pass 3: Rotation recovery (90, 180, 270 degrees)
+        def _evaluate_result(res):
+            text = res.get('raw_text', '').lower()
+            markers = sum(1 for m in ('mg', 'ml', 'tab', 'cap', 'dr', 'rx', 'daily', 'times', 'for', 'days', 'after', 'before') if m in text)
+            words = [w for w in re.findall(r'[a-zA-Z]{3,}', text)]
+            return res.get('mean_confidence', 0.0) + (markers * 12.0) + (len(words) * 3.0)
+
+        best_score = _evaluate_result(best_result)
+
+        if best_result['mean_confidence'] < 75.0 or best_result['word_count'] < 5:
+            for angle in (90, 180, 270):
+                try:
+                    rot_img = preprocessed_img.rotate(angle, expand=True)
+                    rot_res = self._run_tesseract(rot_img, psm=psm)
+                    rot_score = _evaluate_result(rot_res)
+                    if rot_score > best_score + 10.0:
+                        best_result = rot_res
+                        best_score = rot_score
+                except Exception:
+                    pass
+
         return best_result
 
     def _run_tesseract(self, img: Image.Image, psm: int = 6) -> Dict[str, Any]:
         """Runs pytesseract image_to_data and image_to_string on a single image."""
         config = f'--psm {psm} -l eng'
         try:
-            # 1. Run detailed data extraction for confidence
+            # 1. Run detailed data extraction for confidence and bounding boxes
             data = pytesseract.image_to_data(
                 img, config=config, output_type=Output.DICT
             )
 
-            # Extract words and confidences (confidence is -1 for spaces/blocks)
+            # Extract words, confidences, and bounding boxes
             confidences = []
             extracted_words = []
-            for word, conf in zip(data['text'], data['conf']):
-                w = word.strip()
+            bounding_boxes = []
+            num_boxes = len(data.get('text', []))
+
+            for i in range(num_boxes):
+                w = data['text'][i].strip()
                 if w:
                     extracted_words.append(w)
                     try:
-                        c_val = float(conf)
+                        c_val = float(data['conf'][i])
                         if c_val >= 0:
                             confidences.append(c_val)
-                    except (ValueError, TypeError):
+                            bounding_boxes.append({
+                                "text": w,
+                                "confidence": round(c_val, 1),
+                                "x": int(data['left'][i]),
+                                "y": int(data['top'][i]),
+                                "width": int(data['width'][i]),
+                                "height": int(data['height'][i]),
+                            })
+                    except (ValueError, TypeError, KeyError):
                         pass
 
             # 2. Run clean text extraction
@@ -195,6 +228,7 @@ class OCREngine:
                 "confidence_level": conf_level,
                 "lines": lines,
                 "word_count": len(extracted_words),
+                "bounding_boxes": bounding_boxes,
                 "engine": f"Tesseract OCR v{self.version}",
             }
 

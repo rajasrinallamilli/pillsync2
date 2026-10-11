@@ -589,16 +589,29 @@
             </div>
         </div>
 
+        <!-- Prescription Header Metadata Card -->
+        <div id="metaSummaryCard" style="display: none; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0.75rem; font-size: 0.85rem;">
+                <div><span style="color: #64748b; font-size: 0.75rem; display: block; font-weight:600;">PRESCRIBER</span><strong id="metaPrescriber">Not detected</strong></div>
+                <div><span style="color: #64748b; font-size: 0.75rem; display: block; font-weight:600;">PRESCRIPTION DATE</span><strong id="metaDate">Not detected</strong></div>
+                <div><span style="color: #64748b; font-size: 0.75rem; display: block; font-weight:600;">PATIENT DETAILS</span><strong id="metaPatient">Not detected</strong></div>
+                <div><span style="color: #64748b; font-size: 0.75rem; display: block; font-weight:600;">REFILLS AUTHORIZED</span><strong id="metaRefills">Not detected</strong></div>
+                <div><span style="color: #64748b; font-size: 0.75rem; display: block; font-weight:600;">VERIFICATION STATUS</span><span class="confidence-indicator conf-med" id="metaVerification">Review Required</span></div>
+            </div>
+        </div>
+
         <!-- Raw OCR Text (collapsible) -->
         <div id="rawTextContainer" style="display: none; margin-bottom: 1.5rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
-                <span style="font-size: 0.8rem; font-weight: 600; color: var(--slate-700);">Recognized Text</span>
+                <span style="font-size: 0.8rem; font-weight: 600; color: var(--slate-700);">Recognized Text & Bounding Regions</span>
                 <div>
                     <span id="confidenceBadge" class="confidence-indicator conf-high">Confidence: High</span>
                     <button type="button" id="copyRawBtn" class="sample-btn" style="margin-left: 0.5rem;">Copy Text</button>
+                    <button type="button" id="toggleBoxesBtn" class="sample-btn" style="margin-left: 0.5rem;">Toggle Bounding Boxes</button>
                 </div>
             </div>
             <div class="raw-text-box" id="rawTextBox"></div>
+            <div id="boxesContainer" style="display: none; margin-top: 0.5rem; max-height: 150px; overflow-y: auto; background: #0f172a; color: #38bdf8; padding: 0.75rem; border-radius: 6px; font-family: monospace; font-size: 0.75rem;"></div>
         </div>
 
         <!-- Editable Medicines Table -->
@@ -606,12 +619,13 @@
             <table class="med-table" id="medTable">
                 <thead>
                     <tr>
-                        <th style="width: 22%;">Medicine Name</th>
-                        <th style="width: 14%;">Dosage</th>
-                        <th style="width: 14%;">Quantity</th>
-                        <th style="width: 16%;">Frequency</th>
-                        <th style="width: 12%;">Duration</th>
-                        <th style="width: 16%;">Prescription Details</th>
+                        <th style="width: 20%;">Medicine Name</th>
+                        <th style="width: 12%;">Strength</th>
+                        <th style="width: 12%;">Prescribed Dose</th>
+                        <th style="width: 12%;">Quantity</th>
+                        <th style="width: 14%;">Frequency</th>
+                        <th style="width: 10%;">Duration</th>
+                        <th style="width: 14%;">Instructions</th>
                         <th style="width: 6%;">Action</th>
                     </tr>
                 </thead>
@@ -772,11 +786,47 @@
         }
     });
 
+    const boxesContainer = document.getElementById('boxesContainer');
+    const toggleBoxesBtn = document.getElementById('toggleBoxesBtn');
+    const metaSummaryCard = document.getElementById('metaSummaryCard');
+    const metaPrescriber = document.getElementById('metaPrescriber');
+    const metaDate = document.getElementById('metaDate');
+    const metaPatient = document.getElementById('metaPatient');
+    const metaRefills = document.getElementById('metaRefills');
+
+    if (toggleBoxesBtn) {
+        toggleBoxesBtn.addEventListener('click', () => {
+            const isHidden = boxesContainer.style.display === 'none';
+            boxesContainer.style.display = isHidden ? 'block' : 'none';
+            toggleBoxesBtn.textContent = isHidden ? 'Hide Bounding Boxes' : 'Toggle Bounding Boxes';
+        });
+    }
+
     function renderResults(data) {
         resultsSection.style.display = 'block';
 
         // Raw OCR text display (sanitized)
         rawTextBox.textContent = data.raw_text || "No text detected.";
+
+        // Bounding boxes display
+        if (boxesContainer) {
+            const boxes = data.bounding_boxes || [];
+            if (boxes.length > 0) {
+                boxesContainer.innerHTML = `<strong>Detected Text Regions (${boxes.length} words):</strong><br>` +
+                    boxes.map(b => `[${b.text}] conf: ${b.confidence}% (x:${b.x}, y:${b.y}, w:${b.width}, h:${b.height})`).join('<br>');
+            } else {
+                boxesContainer.textContent = "No word bounding boxes detected.";
+            }
+        }
+
+        // Header Metadata Card
+        if (metaSummaryCard) {
+            metaSummaryCard.style.display = 'block';
+            metaPrescriber.textContent = data.prescriber_name || 'Not detected';
+            metaDate.textContent = data.prescription_date || 'Not detected';
+            metaPatient.textContent = data.patient_name || 'Not detected';
+            metaRefills.textContent = data.refills_authorized || 'Not detected';
+        }
         
         // Confidence badge
         const conf = data.confidence_level || 'Medium';
@@ -792,7 +842,7 @@
         if (extractedMedicines.length === 0) {
             medTableBody.innerHTML = `
                 <tr>
-                    <td colspan="7" style="text-align:center; padding: 2rem; color: var(--slate-600);">
+                    <td colspan="8" style="text-align:center; padding: 2rem; color: var(--slate-600);">
                         No specific medicines were recognized automatically. You can add them manually using the button below.
                     </td>
                 </tr>
@@ -808,13 +858,20 @@
     function appendMedicineRow(med, idx) {
         const tr = document.createElement('tr');
         tr.dataset.index = idx;
+        const brandTag = med.brand_name ? `<span style="font-size:0.7rem; color:#0284c7; background:#e0f2fe; padding:1px 4px; border-radius:3px; margin-left:4px;">Brand: ${escapeHtml(med.brand_name)}</span>` : '';
+        const missingBadge = (val, placeholder) => val ? '' : `title="Missing value — please review" style="border-color:#f59e0b; background:#fffbeb;"`;
+
         tr.innerHTML = `
-            <td><input class="table-input med-name" type="text" value="${escapeHtml(med.medicine_name || '')}" placeholder="e.g. Paracetamol"></td>
-            <td><input class="table-input med-dosage" type="text" value="${escapeHtml(med.dosage || '')}" placeholder="e.g. 500 mg"></td>
-            <td><input class="table-input med-quantity" type="text" value="${escapeHtml(med.quantity || '')}" placeholder="e.g. 10 tablets"></td>
-            <td><input class="table-input med-frequency" type="text" value="${escapeHtml(med.frequency || '')}" placeholder="e.g. Twice daily"></td>
-            <td><input class="table-input med-duration" type="text" value="${escapeHtml(med.duration || '')}" placeholder="e.g. 5 days"></td>
-            <td><input class="table-input med-details" type="text" value="${escapeHtml(med.prescription_details || '')}" placeholder="e.g. After food"></td>
+            <td>
+                <input class="table-input med-name" type="text" value="${escapeHtml(med.medicine_name || '')}" placeholder="e.g. Paracetamol" ${missingBadge(med.medicine_name)}>
+                ${brandTag}
+            </td>
+            <td><input class="table-input med-strength" type="text" value="${escapeHtml(med.strength || med.dosage || '')}" placeholder="e.g. 500 mg" ${missingBadge(med.strength || med.dosage)}></td>
+            <td><input class="table-input med-dose" type="text" value="${escapeHtml(med.dose_per_administration || '')}" placeholder="e.g. 1 tablet" ${missingBadge(med.dose_per_administration)}></td>
+            <td><input class="table-input med-quantity" type="text" value="${escapeHtml(med.quantity || '')}" placeholder="e.g. 10 tablets" ${missingBadge(med.quantity)}></td>
+            <td><input class="table-input med-frequency" type="text" value="${escapeHtml(med.frequency || '')}" placeholder="e.g. Twice daily" ${missingBadge(med.frequency)}></td>
+            <td><input class="table-input med-duration" type="text" value="${escapeHtml(med.duration || '')}" placeholder="e.g. 5 days" ${missingBadge(med.duration)}></td>
+            <td><input class="table-input med-instructions" type="text" value="${escapeHtml(med.instructions || med.prescription_details || '')}" placeholder="e.g. After food"></td>
             <td style="text-align:center;">
                 <button type="button" class="btn btn-danger" style="padding: 0.25rem 0.5rem; font-size: 0.75rem;" onclick="removeRow(this)">✕</button>
             </td>
@@ -826,11 +883,12 @@
     addMedRowBtn.addEventListener('click', () => {
         appendMedicineRow({
             medicine_name: '',
-            dosage: '',
+            strength: '',
+            dose_per_administration: '',
             quantity: '',
             frequency: '',
             duration: '',
-            prescription_details: ''
+            instructions: ''
         }, medTableBody.children.length);
         countBadge.textContent = `${medTableBody.querySelectorAll('tr').length} Detected`;
     });
@@ -853,11 +911,14 @@
             if (name) {
                 medsToSave.push({
                     medicine_name: name,
-                    dosage: tr.querySelector('.med-dosage')?.value.trim() || null,
+                    strength: tr.querySelector('.med-strength')?.value.trim() || null,
+                    dosage: tr.querySelector('.med-strength')?.value.trim() || null,
+                    dose_per_administration: tr.querySelector('.med-dose')?.value.trim() || null,
                     quantity: tr.querySelector('.med-quantity')?.value.trim() || null,
                     frequency: tr.querySelector('.med-frequency')?.value.trim() || null,
                     duration: tr.querySelector('.med-duration')?.value.trim() || null,
-                    prescription_details: tr.querySelector('.med-details')?.value.trim() || null,
+                    instructions: tr.querySelector('.med-instructions')?.value.trim() || null,
+                    prescription_details: tr.querySelector('.med-instructions')?.value.trim() || null,
                 });
             }
         });

@@ -123,19 +123,40 @@ class PrescriptionOCRExtractView(APIView):
         except Exception as e:
             logger.warning(f"Could not save PrescriptionUpload audit record: {e}")
 
-        # 8. Construct response message
+        # 8. Extract prescription-level metadata from items if available
+        first_med = extracted_medicines[0] if extracted_medicines else {}
+        prescriber_val = first_med.get("prescriber_name")
+        date_val = first_med.get("prescription_date")
+        patient_val = first_med.get("patient_name")
+        refills_val = first_med.get("refills_authorized")
+
+        # 9. Construct response message
         if extracted_medicines:
             message = f"Successfully recognized {len(extracted_medicines)} medication(s) from prescription."
         else:
             message = "Text was recognized, but no specific medications could be reliably identified. Please review raw OCR text or verify manually."
 
+        image_url = None
+        if upload_record and upload_record.image:
+            try:
+                image_url = upload_record.image.url
+            except Exception:
+                image_url = None
+
         response_payload = {
             "success": True,
             "upload_id": upload_record.id if upload_record else None,
+            "image_url": image_url,
             "raw_text": raw_text,
             "mean_confidence": mean_conf,
             "confidence_level": conf_level,
+            "bounding_boxes": ocr_result.get("bounding_boxes", []),
+            "prescriber_name": prescriber_val,
+            "prescription_date": date_val,
+            "patient_name": patient_val,
+            "refills_authorized": refills_val,
             "medicines": extracted_medicines,
+            "verification_required": True,
             "message": message,
         }
 
